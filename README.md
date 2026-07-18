@@ -1,20 +1,26 @@
 # DeepSeek Tray
 
-显示 DeepSeek API 余额在 Windows 右下角系统托盘。
+Display your [DeepSeek](https://deepseek.com) API balance in the Windows system tray.
 
-## 使用方式
+Built with **Rust** — minimal resource usage (~8 MB RAM), single `.exe` with zero runtime dependencies. No Electron, no bloat.
 
-### 下载即用
+[中文说明](README.zh.md)
 
-从 [Releases](../../releases) 下载 `deepseek-tray.exe`，双击运行。
+## Download
 
-### 配置 API Key
+Get `deepseek-tray.exe` from [Releases](../../releases). Double-click to run.
 
-三种方式任选其一：
+## Setup API Key
 
-1. **环境变量**：`set DEEPSEEK_API_KEY=sk-xxxxxxxx`
-2. **配置文件**：右键托盘图标 → "设置 API Key" → 记事本编辑 `config.toml`
-3. **手动创建**：在 `%APPDATA%\deepseek-tray\config.toml` 写入：
+**Recommended:** right-click the tray icon → **"设置 API Key"** → edit the config file in Notepad, save, then click "刷新余额".
+
+Alternatively, set the environment variable:
+
+```cmd
+set DEEPSEEK_API_KEY=sk-xxxxxxxx
+```
+
+Or manually create `%APPDATA%\deepseek-tray\config.toml`:
 
 ```toml
 api_key = "sk-xxxxxxxx"
@@ -22,20 +28,24 @@ refresh_interval_minutes = 30
 auto_start = false
 ```
 
-## 功能
+## Features
 
-- 托盘图标显示余额整数（白色文字，透明背景）
-- 悬停查看详细信息（充值余额 / 赠送余额）
-- 右键菜单：刷新、复制余额、切换刷新间隔（15/30/60分钟）、设置 API Key、开机自启、退出
-- DPI 自适应（100%～200% 清晰显示）
+- Balance shown as white text on the tray icon (no background)
+- Hover tooltip shows topped-up / granted breakdown
+- Right-click menu: Refresh, Copy Balance, set refresh interval (15/30/60 min), Set API Key, Start with Windows, Quit
+- DPI-aware rendering — crisp on 100% to 200%+ scaling
 
-## 编译
+## Start with Windows
 
-需要 [Rust](https://rustup.rs)：
+Enable **"开机自启"** in the right-click menu. The app writes a registry key under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. Disabling removes it.
+
+## Build (for developers)
+
+Requires [Rust](https://rustup.rs):
 
 ```bash
 cargo build --release
-# 输出: target/release/deepseek-tray.exe
+# output: target/release/deepseek-tray.exe (~4 MB)
 ```
 
 ## License
