@@ -1,5 +1,5 @@
 use anyhow::Result;
-use windows::Win32::Foundation::{COLORREF, RECT};
+use windows::Win32::Foundation::{COLORREF, RECT, SIZE};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -10,7 +10,7 @@ pub struct RenderedIcon {
 }
 
 pub fn render_balance_icon(text: &str) -> Result<RenderedIcon> {
-    unsafe { gdi_text_icon(text) }
+    unsafe { gdi_text_icon(text.trim()) }
 }
 
 pub fn render_status_icon(status: &str) -> Result<RenderedIcon> {
@@ -20,15 +20,12 @@ pub fn render_status_icon(status: &str) -> Result<RenderedIcon> {
 unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     let icon_w = GetSystemMetrics(SM_CXSMICON).max(16) as u32;
     let icon_h = GetSystemMetrics(SM_CYSMICON).max(16) as u32;
-    let char_count = text.chars().count().max(1) as u32;
+    let font_h = icon_h as i32;
 
     let hdc_screen = GetDC(None);
     if hdc_screen.is_invalid() { anyhow::bail!("GetDC"); }
     let hdc_mem = CreateCompatibleDC(hdc_screen);
     if hdc_mem.is_invalid() { ReleaseDC(None, hdc_screen); anyhow::bail!("CreateCompatibleDC"); }
-
-    let font_h = icon_h as i32;
-    let font_w = (icon_w / char_count) as i32;
 
     let hbmp = CreateCompatibleBitmap(hdc_screen, icon_w as i32, icon_h as i32);
     if hbmp.is_invalid() {
@@ -38,28 +35,30 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     }
     let hbmp_old = SelectObject(hdc_mem, hbmp);
 
+    // Black background → transparent
     let hbr = CreateSolidBrush(COLORREF(0));
     let full = RECT { left: 0, top: 0, right: icon_w as i32, bottom: icon_h as i32 };
     FillRect(hdc_mem, &full, hbr);
     let _ = DeleteObject(hbr);
 
     let hfont = CreateFontW(
-        font_h, font_w, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0,
+        font_h, 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0,
         windows::core::w!("Segoe UI"),
     );
     let hfont_old = SelectObject(hdc_mem, hfont);
     SetBkMode(hdc_mem, TRANSPARENT);
     SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
+    // Measure actual pixel dimensions of the text
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut text_buf = wide.clone();
-    let mut draw_rect = full;
-    DrawTextW(
-        hdc_mem,
-        &mut text_buf,
-        &mut draw_rect as *mut RECT,
-        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP,
-    );
+    let mut sz = SIZE::default();
+    GetTextExtentPoint32W(hdc_mem, &wide, &mut sz);
+
+    // Center: X = (canvas_width - text_width) / 2  (Y already calculated in earlier code)
+    let x = ((icon_w as i32 - sz.cx) / 2).max(0);
+    // Align text height within the bitmap
+    let y = ((icon_h as i32 - sz.cy) / 2).max(0);
+    TextOutW(hdc_mem, x, y, &wide);
 
     SelectObject(hdc_mem, hfont_old);
     let _ = DeleteObject(hfont);
@@ -85,7 +84,7 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     let _ = DeleteDC(hdc_mem);
     ReleaseDC(None, hdc_screen);
 
-    // Black (0,0,0) → transparent; white text → white with brightness as alpha
+    // Black → transparent; white text → white with brightness as alpha
     let mut rgba = Vec::with_capacity(size * 4);
     for p in &bits {
         let r = ((p >> 16) & 0xFF) as u32;
