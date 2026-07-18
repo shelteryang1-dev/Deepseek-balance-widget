@@ -1,0 +1,7 @@
+/target/
+/.idea/
+*.swp
+*.swo
+*~
+.env
+config.toml
