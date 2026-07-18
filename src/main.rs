@@ -191,16 +191,19 @@ fn main() {
                     if let Some(parent) = config_path.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
-                    let _ = std::fs::write(
-                        &config_path,
-                        "# DeepSeek Tray 配置文件\n\
-                         # 把下面的 \"replace-with-your-api-key\" 替换为你的 API Key\n\
-                         # 保存后右键托盘图标 → 刷新余额\n\
-                         \n\
-                         api_key = \"replace-with-your-api-key\"\n\
-                         refresh_interval_minutes = 30\n\
-                         auto_start = false\n",
-                    );
+                    // Only create a template if no config exists yet
+                    if !config_path.exists() {
+                        let _ = std::fs::write(
+                            &config_path,
+                            "# DeepSeek Tray 配置文件\n\
+                             # 把下面的 \"replace-with-your-api-key\" 替换为你的 API Key\n\
+                             # 保存后右键托盘图标 → 刷新余额\n\
+                             \n\
+                             api_key = \"replace-with-your-api-key\"\n\
+                             refresh_interval_minutes = 30\n\
+                             auto_start = false\n",
+                        );
+                    }
                     let _ = std::process::Command::new("notepad")
                         .arg(&config_path)
                         .spawn();
