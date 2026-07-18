@@ -32,8 +32,10 @@ pub enum ApiError {
     Network(String),
     Unauthorized,
     RateLimited,
+    ClientError(u16),
     ServerError(u16),
     ParseError(String),
+    ServiceUnavailable,
 }
 
 impl std::fmt::Display for ApiError {
@@ -42,8 +44,10 @@ impl std::fmt::Display for ApiError {
             ApiError::Network(msg) => write!(f, "网络错误: {}", msg),
             ApiError::Unauthorized => write!(f, "API Key 无效"),
             ApiError::RateLimited => write!(f, "请求过于频繁，请稍后重试"),
+            ApiError::ClientError(code) => write!(f, "客户端错误 (HTTP {})", code),
             ApiError::ServerError(code) => write!(f, "服务器错误 (HTTP {})", code),
             ApiError::ParseError(msg) => write!(f, "数据解析错误: {}", msg),
+            ApiError::ServiceUnavailable => write!(f, "余额服务暂不可用"),
         }
     }
 }
@@ -89,6 +93,10 @@ async fn fetch_balance_inner(api_key: &str, base_url: &str) -> Result<Balance, A
                 .await
                 .map_err(|e| ApiError::ParseError(format!("JSON 解析失败: {}", e)))?;
 
+            if !raw.is_available {
+                return Err(ApiError::ServiceUnavailable);
+            }
+
             let info = raw
                 .balance_infos
                 .into_iter()
@@ -98,15 +106,15 @@ async fn fetch_balance_inner(api_key: &str, base_url: &str) -> Result<Balance, A
             let total = info
                 .total_balance
                 .parse::<f64>()
-                .map_err(|_| ApiError::ParseError("余额格式异常".into()))?;
+                .map_err(|e| ApiError::ParseError(format!("total_balance '{}' 解析失败: {}", info.total_balance, e)))?;
             let topped_up = info
                 .topped_up_balance
                 .parse::<f64>()
-                .map_err(|_| ApiError::ParseError("充值余额格式异常".into()))?;
+                .map_err(|e| ApiError::ParseError(format!("topped_up_balance '{}' 解析失败: {}", info.topped_up_balance, e)))?;
             let granted = info
                 .granted_balance
                 .parse::<f64>()
-                .map_err(|_| ApiError::ParseError("赠送余额格式异常".into()))?;
+                .map_err(|e| ApiError::ParseError(format!("granted_balance '{}' 解析失败: {}", info.granted_balance, e)))?;
 
             Ok(Balance {
                 total,
@@ -117,6 +125,8 @@ async fn fetch_balance_inner(api_key: &str, base_url: &str) -> Result<Balance, A
         }
         401 => Err(ApiError::Unauthorized),
         429 => Err(ApiError::RateLimited),
+        403 => Err(ApiError::ClientError(403)),
+        s if (400..500).contains(&s) => Err(ApiError::ClientError(s)),
         s if s >= 500 => Err(ApiError::ServerError(s)),
         other => Err(ApiError::ServerError(other)),
     }

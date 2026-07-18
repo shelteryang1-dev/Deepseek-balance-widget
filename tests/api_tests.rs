@@ -67,6 +67,19 @@ async fn test_fetch_balance_429() {
 }
 
 #[tokio::test]
+async fn test_fetch_balance_403_client_error() {
+    let server = mock_balance_server(r#"{"error": "forbidden"}"#, 403);
+    let base_url = server.base_url();
+
+    let result = fetch_balance_with_url("sk-test-key", &base_url).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ApiError::ClientError(403) => {}
+        e => panic!("expected ClientError(403), got {:?}", e),
+    }
+}
+
+#[tokio::test]
 async fn test_fetch_balance_server_error() {
     let server = mock_balance_server(r#"{"error": "internal"}"#, 500);
     let base_url = server.base_url();
@@ -76,5 +89,71 @@ async fn test_fetch_balance_server_error() {
     match result.unwrap_err() {
         ApiError::ServerError(500) => {}
         e => panic!("expected ServerError(500), got {:?}", e),
+    }
+}
+
+#[tokio::test]
+async fn test_fetch_balance_malformed_json() {
+    let server = mock_balance_server("not valid json {{{", 200);
+    let base_url = server.base_url();
+
+    let result = fetch_balance_with_url("sk-test-key", &base_url).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ApiError::ParseError(msg) => assert!(msg.contains("JSON 解析失败")),
+        e => panic!("expected ParseError, got {:?}", e),
+    }
+}
+
+#[tokio::test]
+async fn test_fetch_balance_empty_balance_array() {
+    let body = r#"{"is_available": true, "balance_infos": []}"#;
+    let server = mock_balance_server(body, 200);
+    let base_url = server.base_url();
+
+    let result = fetch_balance_with_url("sk-test-key", &base_url).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ApiError::ParseError(msg) => assert!(msg.contains("为空")),
+        e => panic!("expected ParseError for empty array, got {:?}", e),
+    }
+}
+
+#[tokio::test]
+async fn test_fetch_balance_non_numeric_value() {
+    let body = r#"{
+        "is_available": true,
+        "balance_infos": [{
+            "currency": "CNY",
+            "total_balance": "N/A",
+            "topped_up_balance": "80.00",
+            "granted_balance": "8.50"
+        }]
+    }"#;
+    let server = mock_balance_server(body, 200);
+    let base_url = server.base_url();
+
+    let result = fetch_balance_with_url("sk-test-key", &base_url).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ApiError::ParseError(msg) => {
+            assert!(msg.contains("total_balance"));
+            assert!(msg.contains("N/A"));
+        }
+        e => panic!("expected ParseError with field info, got {:?}", e),
+    }
+}
+
+#[tokio::test]
+async fn test_fetch_balance_service_unavailable() {
+    let body = r#"{"is_available": false, "balance_infos": [{"currency": "CNY", "total_balance": "0.00", "topped_up_balance": "0.00", "granted_balance": "0.00"}]}"#;
+    let server = mock_balance_server(body, 200);
+    let base_url = server.base_url();
+
+    let result = fetch_balance_with_url("sk-test-key", &base_url).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ApiError::ServiceUnavailable => {}
+        e => panic!("expected ServiceUnavailable, got {:?}", e),
     }
 }
