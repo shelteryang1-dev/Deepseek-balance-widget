@@ -33,8 +33,8 @@ pub type DialogFn = fn(&str, &str, &str) -> Option<String>;
 impl Config {
     /// Default config directory: %APPDATA%/deepseek-tray
     pub fn config_dir() -> PathBuf {
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
+        dirs::config_dir()
+            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
             .join("deepseek-tray")
     }
 
@@ -85,17 +85,19 @@ impl Config {
     ) -> Result<String> {
         // 1. Environment variable (highest priority)
         if let Ok(key) = std::env::var("DEEPSEEK_API_KEY") {
+            let key = key.trim();
             if !key.is_empty() {
                 log::info!("Using API key from DEEPSEEK_API_KEY env var");
-                return Ok(key);
+                return Ok(key.to_string());
             }
         }
 
         // 2. Config file
         if let Some(ref key) = self.api_key {
+            let key = key.trim();
             if !key.is_empty() {
                 log::info!("Using API key from config file");
-                return Ok(key.clone());
+                return Ok(key.to_string());
             }
         }
 

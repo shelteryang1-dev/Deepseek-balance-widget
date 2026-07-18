@@ -97,11 +97,75 @@ fn test_resolve_api_key_from_file_when_no_env() {
 
 #[test]
 fn test_resolve_api_key_missing_returns_error() {
+    let _lock = ENV_MUTEX.lock().unwrap();
     let dir = TempDir::new().unwrap();
     let config_path = dir.path().join("deepseek-tray").join("config.toml");
 
     let mut config = Config::default();
     let result = config.resolve_api_key(&config_path, None);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("API Key"));
+}
+
+#[test]
+fn test_resolve_api_key_empty_env_falls_through() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let dir = TempDir::new().unwrap();
+    write_config(&dir, r#"api_key = "sk-from-file""#);
+    let config_path = dir.path().join("deepseek-tray").join("config.toml");
+
+    // Empty env var should be ignored, fall through to config file
+    env::set_var("DEEPSEEK_API_KEY", "");
+    let mut config = Config::load_from_path(&config_path).unwrap();
+    let key = config.resolve_api_key(&config_path, None).unwrap();
+    assert_eq!(key, "sk-from-file");
+    env::remove_var("DEEPSEEK_API_KEY");
+}
+
+#[test]
+fn test_resolve_api_key_empty_config_falls_through_to_dialog() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let dir = TempDir::new().unwrap();
+    write_config(&dir, r#"api_key = """#);
+    let config_path = dir.path().join("deepseek-tray").join("config.toml");
+
+    // Empty config key + no env var → should fall through to dialog
+    let mut config = Config::load_from_path(&config_path).unwrap();
+    let key = config.resolve_api_key(&config_path, Some(|_, _, _| {
+        Some("sk-from-dialog".into())
+    })).unwrap();
+    assert_eq!(key, "sk-from-dialog");
+    // Key should have been saved to config
+    assert_eq!(config.api_key.as_deref(), Some("sk-from-dialog"));
+}
+
+#[test]
+fn test_resolve_api_key_from_dialog_saves_to_config() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let dir = TempDir::new().unwrap();
+    let config_path = dir.path().join("deepseek-tray").join("config.toml");
+
+    let mut config = Config::default();
+    let key = config.resolve_api_key(&config_path, Some(|_, _, _| {
+        Some("  sk-dialog-trimmed  ".into())
+    })).unwrap();
+    assert_eq!(key, "sk-dialog-trimmed");
+    assert_eq!(config.api_key.as_deref(), Some("sk-dialog-trimmed"));
+    // Verify it was actually saved to disk
+    let reloaded = Config::load_from_path(&config_path).unwrap();
+    assert_eq!(reloaded.api_key.as_deref(), Some("sk-dialog-trimmed"));
+}
+
+#[test]
+fn test_resolve_api_key_empty_dialog_returns_error() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let dir = TempDir::new().unwrap();
+    let config_path = dir.path().join("deepseek-tray").join("config.toml");
+
+    let mut config = Config::default();
+    let result = config.resolve_api_key(&config_path, Some(|_, _, _| {
+        Some("".into())  // empty input from dialog
+    }));
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("API Key"));
 }
