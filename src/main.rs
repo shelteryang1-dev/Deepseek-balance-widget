@@ -18,7 +18,6 @@ enum UserEvent {
     /// Update menu check marks: (interval_minutes, auto_start_enabled)
     UpdateMenuChecks(u32, bool),
     RefreshRequested,
-    Quit,
 }
 
 fn main() {
@@ -142,9 +141,6 @@ fn main() {
                             }
                         });
                     });
-                }
-                UserEvent::Quit => {
-                    *control_flow = ControlFlow::Exit;
                 }
             }
         }
