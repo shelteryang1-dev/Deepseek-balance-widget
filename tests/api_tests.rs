@@ -100,7 +100,7 @@ async fn test_fetch_balance_malformed_json() {
     let result = fetch_balance_with_url("sk-test-key", &base_url).await;
     assert!(result.is_err());
     match result.unwrap_err() {
-        ApiError::ParseError(msg) => assert!(msg.contains("JSON 解析失败")),
+        ApiError::ParseError(msg) => assert!(msg.contains("JSON parse failed")),
         e => panic!("expected ParseError, got {:?}", e),
     }
 }
@@ -114,7 +114,7 @@ async fn test_fetch_balance_empty_balance_array() {
     let result = fetch_balance_with_url("sk-test-key", &base_url).await;
     assert!(result.is_err());
     match result.unwrap_err() {
-        ApiError::ParseError(msg) => assert!(msg.contains("为空")),
+        ApiError::ParseError(msg) => assert!(msg.contains("empty balance_infos")),
         e => panic!("expected ParseError for empty array, got {:?}", e),
     }
 }

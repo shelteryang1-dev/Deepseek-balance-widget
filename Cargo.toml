@@ -11,12 +11,9 @@ muda = "0.15"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 toml = "0.8"
-image = { version = "0.25", default-features = false, features = ["png"] }
-ab_glyph = "0.2"
+windows = { version = "0.58", features = ["Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi"] }
 winreg = "0.53"
-tinyfiledialogs = "3.9"
 dirs = "6"
 anyhow = "1"
 log = "0.4"

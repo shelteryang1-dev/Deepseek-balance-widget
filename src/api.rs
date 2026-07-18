@@ -9,6 +9,7 @@ pub struct Balance {
     pub total: f64,
     pub topped_up: f64,
     pub granted: f64,
+    #[allow(dead_code)]
     pub currency: String,
 }
 
@@ -41,25 +42,24 @@ pub enum ApiError {
 impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ApiError::Network(msg) => write!(f, "网络错误: {}", msg),
-            ApiError::Unauthorized => write!(f, "API Key 无效"),
-            ApiError::RateLimited => write!(f, "请求过于频繁，请稍后重试"),
-            ApiError::ClientError(code) => write!(f, "客户端错误 (HTTP {})", code),
-            ApiError::ServerError(code) => write!(f, "服务器错误 (HTTP {})", code),
-            ApiError::ParseError(msg) => write!(f, "数据解析错误: {}", msg),
-            ApiError::ServiceUnavailable => write!(f, "余额服务暂不可用"),
+            ApiError::Network(msg) => write!(f, "network error: {}", msg),
+            ApiError::Unauthorized => write!(f, "invalid API key"),
+            ApiError::RateLimited => write!(f, "rate limited, retry later"),
+            ApiError::ClientError(code) => write!(f, "client error (HTTP {})", code),
+            ApiError::ServerError(code) => write!(f, "server error (HTTP {})", code),
+            ApiError::ParseError(msg) => write!(f, "parse error: {}", msg),
+            ApiError::ServiceUnavailable => write!(f, "balance service unavailable"),
         }
     }
 }
 
 impl std::error::Error for ApiError {}
 
-/// Fetch balance from DeepSeek API.
 pub async fn fetch_balance(api_key: &str) -> Result<Balance, ApiError> {
     fetch_balance_inner(api_key, DEEPSEEK_API_BASE).await
 }
 
-/// Fetch balance from a custom base URL (for testing with httpmock).
+#[allow(dead_code)]
 pub async fn fetch_balance_with_url(api_key: &str, base_url: &str) -> Result<Balance, ApiError> {
     fetch_balance_inner(api_key, base_url).await
 }
@@ -68,7 +68,7 @@ async fn fetch_balance_inner(api_key: &str, base_url: &str) -> Result<Balance, A
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(|e| ApiError::Network(format!("创建 HTTP 客户端失败: {}", e)))?;
+        .map_err(|e| ApiError::Network(format!("failed to create HTTP client: {}", e)))?;
 
     let url = format!("{}/user/balance", base_url.trim_end_matches('/'));
 
@@ -79,49 +79,47 @@ async fn fetch_balance_inner(api_key: &str, base_url: &str) -> Result<Balance, A
         .await
         .map_err(|e| {
             if e.is_timeout() {
-                ApiError::Network("请求超时".into())
+                ApiError::Network("request timeout".into())
             } else {
-                ApiError::Network(format!("请求失败: {}", e))
+                ApiError::Network(format!("request failed: {}", e))
             }
         })?;
 
     let status = response.status().as_u16();
     match status {
         200 => {
-            let raw: BalanceResponseRaw = response
-                .json()
-                .await
-                .map_err(|e| ApiError::ParseError(format!("JSON 解析失败: {}", e)))?;
+            let raw: BalanceResponseRaw = response.json().await.map_err(|e| {
+                ApiError::ParseError(format!("JSON parse failed: {}", e))
+            })?;
 
             if !raw.is_available {
                 return Err(ApiError::ServiceUnavailable);
             }
 
-            let info = raw
-                .balance_infos
-                .into_iter()
-                .next()
-                .ok_or_else(|| ApiError::ParseError("余额数据为空".into()))?;
+            let info = raw.balance_infos.into_iter().next().ok_or_else(|| {
+                ApiError::ParseError("empty balance_infos".into())
+            })?;
 
-            let total = info
-                .total_balance
-                .parse::<f64>()
-                .map_err(|e| ApiError::ParseError(format!("total_balance '{}' 解析失败: {}", info.total_balance, e)))?;
-            let topped_up = info
-                .topped_up_balance
-                .parse::<f64>()
-                .map_err(|e| ApiError::ParseError(format!("topped_up_balance '{}' 解析失败: {}", info.topped_up_balance, e)))?;
-            let granted = info
-                .granted_balance
-                .parse::<f64>()
-                .map_err(|e| ApiError::ParseError(format!("granted_balance '{}' 解析失败: {}", info.granted_balance, e)))?;
+            let total = info.total_balance.parse::<f64>().map_err(|e| {
+                ApiError::ParseError(format!(
+                    "total_balance '{}' parse failed: {}",
+                    info.total_balance, e
+                ))
+            })?;
+            let topped_up = info.topped_up_balance.parse::<f64>().map_err(|e| {
+                ApiError::ParseError(format!(
+                    "topped_up_balance '{}' parse failed: {}",
+                    info.topped_up_balance, e
+                ))
+            })?;
+            let granted = info.granted_balance.parse::<f64>().map_err(|e| {
+                ApiError::ParseError(format!(
+                    "granted_balance '{}' parse failed: {}",
+                    info.granted_balance, e
+                ))
+            })?;
 
-            Ok(Balance {
-                total,
-                topped_up,
-                granted,
-                currency: info.currency,
-            })
+            Ok(Balance { total, topped_up, granted, currency: info.currency })
         }
         401 => Err(ApiError::Unauthorized),
         429 => Err(ApiError::RateLimited),

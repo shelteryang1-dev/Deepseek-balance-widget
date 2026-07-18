@@ -4,14 +4,13 @@ use tray_icon::{TrayIcon, TrayIconBuilder};
 
 use crate::render::{render_balance_icon, render_status_icon, RenderedIcon};
 
-/// Tray state for icon rendering.
 #[derive(Debug, Clone)]
 pub enum TrayState {
-    Balance(String),   // e.g., "¥88.50"
-    NoKey,             // "--"
-    NetworkError,      // "ERR"
-    Unauthorized,      // "KEY"
-    RateLimited,       // "429"
+    Balance(String),
+    NoKey,
+    NetworkError,
+    Unauthorized,
+    RateLimited,
 }
 
 impl TrayState {
@@ -27,9 +26,7 @@ impl TrayState {
 
     pub fn tooltip(&self) -> String {
         match self {
-            TrayState::Balance(text) => {
-                format!("DeepSeek 余额: {}", text)
-            }
+            TrayState::Balance(text) => format!("DeepSeek 余额: {}", text),
             TrayState::NoKey => "未配置 API Key，请右键设置".into(),
             TrayState::NetworkError => "网络连接失败，点击刷新重试".into(),
             TrayState::Unauthorized => "API Key 无效，请右键重新配置".into(),
@@ -38,7 +35,6 @@ impl TrayState {
     }
 }
 
-/// IDs for menu items (used in event dispatch).
 pub mod menu_id {
     pub const REFRESH: &str = "refresh";
     pub const COPY: &str = "copy";
@@ -50,7 +46,6 @@ pub mod menu_id {
     pub const QUIT: &str = "quit";
 }
 
-/// All menu item handles needed for state updates.
 pub struct MenuItems {
     pub interval_15: CheckMenuItem,
     pub interval_30: CheckMenuItem,
@@ -58,7 +53,6 @@ pub struct MenuItems {
     pub auto_start: CheckMenuItem,
 }
 
-/// Build the right-click context menu.
 pub fn build_menu() -> Result<(Menu, MenuItems)> {
     let menu = Menu::new();
 
@@ -67,14 +61,17 @@ pub fn build_menu() -> Result<(Menu, MenuItems)> {
     let sep1 = PredefinedMenuItem::separator();
 
     let interval_sub = Submenu::with_id("interval_sub", "刷新间隔", true);
-    let interval_15 = CheckMenuItem::with_id(menu_id::INTERVAL_15, "15 分钟", true, false, None);
-    let interval_30 = CheckMenuItem::with_id(menu_id::INTERVAL_30, "30 分钟", true, true, None);
-    let interval_60 = CheckMenuItem::with_id(menu_id::INTERVAL_60, "60 分钟", true, false, None);
+    let interval_15 =
+        CheckMenuItem::with_id(menu_id::INTERVAL_15, "15 分钟", true, false, None);
+    let interval_30 =
+        CheckMenuItem::with_id(menu_id::INTERVAL_30, "30 分钟", true, true, None);
+    let interval_60 =
+        CheckMenuItem::with_id(menu_id::INTERVAL_60, "60 分钟", true, false, None);
     interval_sub
         .append(&interval_15)
         .and_then(|_| interval_sub.append(&interval_30))
         .and_then(|_| interval_sub.append(&interval_60))
-        .context("构建刷新间隔子菜单失败")?;
+        .context("failed to build interval submenu")?;
 
     let sep2 = PredefinedMenuItem::separator();
     let set_key = MenuItem::with_id(menu_id::SET_API_KEY, "设置 API Key", true, None);
@@ -92,25 +89,18 @@ pub fn build_menu() -> Result<(Menu, MenuItems)> {
         .and_then(|_| menu.append(&auto_start))
         .and_then(|_| menu.append(&sep3))
         .and_then(|_| menu.append(&quit))
-        .context("构建菜单失败")?;
+        .context("failed to build menu")?;
 
-    let items = MenuItems {
-        interval_15,
-        interval_30,
-        interval_60,
-        auto_start,
-    };
+    let items = MenuItems { interval_15, interval_30, interval_60, auto_start };
 
     Ok((menu, items))
 }
 
-/// Create a tray_icon::Icon from our RenderedIcon.
 pub fn to_tray_icon(rendered: &RenderedIcon) -> tray_icon::Icon {
     tray_icon::Icon::from_rgba(rendered.rgba.clone(), rendered.width, rendered.height)
         .expect("invalid icon dimensions")
 }
 
-/// Render icon for the given tray state.
 pub fn render_icon(state: &TrayState) -> Result<RenderedIcon> {
     match state {
         TrayState::Balance(text) => render_balance_icon(text),
@@ -118,7 +108,6 @@ pub fn render_icon(state: &TrayState) -> Result<RenderedIcon> {
     }
 }
 
-/// Build the tray icon and return the TrayIcon handle.
 pub fn build_tray(menu: Menu) -> Result<TrayIcon> {
     let placeholder = render_status_icon("--")?;
     let icon = to_tray_icon(&placeholder);
@@ -128,12 +117,11 @@ pub fn build_tray(menu: Menu) -> Result<TrayIcon> {
         .with_tooltip("DeepSeek Tray")
         .with_icon(icon)
         .build()
-        .context("创建系统托盘图标失败")?;
+        .context("failed to create tray icon")?;
 
     Ok(tray)
 }
 
-/// Update interval check marks on the menu.
 pub fn update_interval_checks(items: &MenuItems, current: u32) {
     items.interval_15.set_checked(current == 15);
     items.interval_30.set_checked(current == 30);

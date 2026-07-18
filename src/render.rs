@@ -1,13 +1,7 @@
-use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
-use anyhow::{Context, Result};
-use image::RgbaImage;
-
-const ICON_WIDTH: u32 = 64;
-const ICON_HEIGHT: u32 = 24;
-const FONT_SIZE_PX: f32 = 12.0;
-const BG_COLOR: [u8; 4] = [30, 30, 30, 255];
-const TEXT_COLOR: [u8; 4] = [255, 255, 255, 255];
-const WARNING_COLOR: [u8; 4] = [255, 200, 50, 255];
+use anyhow::Result;
+use windows::Win32::Foundation::{COLORREF, RECT};
+use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub struct RenderedIcon {
     pub rgba: Vec<u8>,
@@ -15,78 +9,91 @@ pub struct RenderedIcon {
     pub height: u32,
 }
 
-/// Render a balance amount as a tray icon.
 pub fn render_balance_icon(text: &str) -> Result<RenderedIcon> {
-    render_text_icon(text, TEXT_COLOR, BG_COLOR)
+    unsafe { gdi_text_icon(text) }
 }
 
-/// Render a status indicator as a tray icon.
-pub fn render_status_icon(text: &str) -> Result<RenderedIcon> {
-    render_text_icon(text, WARNING_COLOR, BG_COLOR)
+pub fn render_status_icon(status: &str) -> Result<RenderedIcon> {
+    unsafe { gdi_text_icon(status) }
 }
 
-fn render_text_icon(text: &str, fg: [u8; 4], bg: [u8; 4]) -> Result<RenderedIcon> {
-    let font_data: &[u8] = include_bytes!("../assets/DejaVuSansMono.ttf");
-    let font = FontRef::try_from_slice(font_data)
-        .context("加载字体失败")?;
+unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
+    let icon_w = GetSystemMetrics(SM_CXSMICON).max(16) as u32;
+    let icon_h = GetSystemMetrics(SM_CYSMICON).max(16) as u32;
+    let char_count = text.chars().count().max(1) as u32;
 
-    let px_scale = PxScale::from(FONT_SIZE_PX);
-    let scaled = font.as_scaled(px_scale);
+    let hdc_screen = GetDC(None);
+    if hdc_screen.is_invalid() { anyhow::bail!("GetDC"); }
+    let hdc_mem = CreateCompatibleDC(hdc_screen);
+    if hdc_mem.is_invalid() { ReleaseDC(None, hdc_screen); anyhow::bail!("CreateCompatibleDC"); }
 
-    // Compute the pixel width of the text
-    let text_width: f32 = text
-        .chars()
-        .map(|ch| scaled.h_advance(scaled.glyph_id(ch)))
-        .sum();
-    let text_width = text_width.ceil() as u32;
+    let font_h = icon_h as i32;
+    let font_w = (icon_w / char_count) as i32;
 
-    let ascent = scaled.ascent().ceil() as u32;
-    let descent = scaled.descent().ceil() as i32;
-    let line_height = ascent + descent.max(0) as u32;
+    let hbmp = CreateCompatibleBitmap(hdc_screen, icon_w as i32, icon_h as i32);
+    if hbmp.is_invalid() {
+        let _ = DeleteDC(hdc_mem);
+        ReleaseDC(None, hdc_screen);
+        anyhow::bail!("CreateCompatibleBitmap");
+    }
+    let hbmp_old = SelectObject(hdc_mem, hbmp);
 
-    let mut img = RgbaImage::from_pixel(ICON_WIDTH, ICON_HEIGHT, image::Rgba(bg));
+    let hbr = CreateSolidBrush(COLORREF(0));
+    let full = RECT { left: 0, top: 0, right: icon_w as i32, bottom: icon_h as i32 };
+    FillRect(hdc_mem, &full, hbr);
+    let _ = DeleteObject(hbr);
 
-    // Center text horizontally
-    let offset_x = ((ICON_WIDTH.saturating_sub(text_width)) / 2) as f32;
-    // Center text vertically
-    let offset_y = ((ICON_HEIGHT.saturating_sub(line_height)) / 2) as f32 + ascent as f32;
+    let hfont = CreateFontW(
+        font_h, font_w, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0,
+        windows::core::w!("Segoe UI"),
+    );
+    let hfont_old = SelectObject(hdc_mem, hfont);
+    SetBkMode(hdc_mem, TRANSPARENT);
+    SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
-    let mut cursor: f32 = offset_x;
-    for ch in text.chars() {
-        let glyph_id = scaled.glyph_id(ch);
-        let glyph = glyph_id.with_scale_and_position(px_scale, (cursor, offset_y));
-        if let Some(outline) = scaled.outline_glyph(glyph) {
-            outline.draw(|x, y, v| {
-                let px = x as u32;
-                let py = y as u32;
-                if px < ICON_WIDTH && py < ICON_HEIGHT {
-                    let alpha = (v * 255.0).min(255.0) as u8;
-                    *img.get_pixel_mut(px, py) =
-                        image::Rgba(blend_over(bg, [fg[0], fg[1], fg[2], alpha]));
-                }
-            });
-        }
-        cursor += scaled.h_advance(glyph_id);
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut text_buf = wide.clone();
+    let mut draw_rect = full;
+    DrawTextW(
+        hdc_mem,
+        &mut text_buf,
+        &mut draw_rect as *mut RECT,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP,
+    );
+
+    SelectObject(hdc_mem, hfont_old);
+    let _ = DeleteObject(hfont);
+
+    // Read BGRA pixels from the bitmap
+    let size = (icon_w * icon_h) as usize;
+    let mut bits = vec![0u32; size];
+    let mut bmi = BITMAPINFO::default();
+    bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bmi.bmiHeader.biWidth = icon_w as i32;
+    bmi.bmiHeader.biHeight = -(icon_h as i32);
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    GetDIBits(
+        hdc_mem, hbmp, 0, icon_h,
+        Some(bits.as_mut_ptr() as *mut _),
+        &mut bmi as *mut _,
+        DIB_RGB_COLORS,
+    );
+
+    SelectObject(hdc_mem, hbmp_old);
+    let _ = DeleteObject(hbmp);
+    let _ = DeleteDC(hdc_mem);
+    ReleaseDC(None, hdc_screen);
+
+    // Black (0,0,0) → transparent; white text → white with brightness as alpha
+    let mut rgba = Vec::with_capacity(size * 4);
+    for p in &bits {
+        let r = ((p >> 16) & 0xFF) as u32;
+        let g = ((p >> 8) & 0xFF) as u32;
+        let b = (p & 0xFF) as u32;
+        let a = ((r + g + b) / 3) as u8;
+        rgba.extend_from_slice(&[255, 255, 255, a]);
     }
 
-    Ok(RenderedIcon {
-        rgba: img.into_raw(),
-        width: ICON_WIDTH,
-        height: ICON_HEIGHT,
-    })
-}
-
-fn blend_over(bg: [u8; 4], fg: [u8; 4]) -> [u8; 4] {
-    let a_f = fg[3] as f32 / 255.0;
-    let a_b = bg[3] as f32 / 255.0;
-    let a_out = a_f + a_b * (1.0 - a_f);
-    if a_out < 0.001 {
-        return [0, 0, 0, 0];
-    }
-    [
-        ((fg[0] as f32 * a_f + bg[0] as f32 * a_b * (1.0 - a_f)) / a_out) as u8,
-        ((fg[1] as f32 * a_f + bg[1] as f32 * a_b * (1.0 - a_f)) / a_out) as u8,
-        ((fg[2] as f32 * a_f + bg[2] as f32 * a_b * (1.0 - a_f)) / a_out) as u8,
-        (a_out * 255.0) as u8,
-    ]
+    Ok(RenderedIcon { rgba, width: icon_w, height: icon_h })
 }

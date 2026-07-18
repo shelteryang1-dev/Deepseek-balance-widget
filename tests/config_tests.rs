@@ -104,7 +104,7 @@ fn test_resolve_api_key_missing_returns_error() {
     let mut config = Config::default();
     let result = config.resolve_api_key(&config_path, None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("API Key"));
+    assert!(result.unwrap_err().to_string().contains("API key"));
 }
 
 #[test]
@@ -167,5 +167,5 @@ fn test_resolve_api_key_empty_dialog_returns_error() {
         Some("".into())  // empty input from dialog
     }));
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("API Key"));
+    assert!(result.unwrap_err().to_string().contains("API key"));
 }
