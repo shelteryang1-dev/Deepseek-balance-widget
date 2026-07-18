@@ -2,8 +2,6 @@
 
 显示 DeepSeek API 余额在 Windows 右下角系统托盘。
 
-![screenshot](https://via.placeholder.com/200x40/333/fff?text=¥21)
-
 ## 使用方式
 
 ### 下载即用
