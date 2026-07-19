@@ -123,14 +123,25 @@ fn main() {
                             .build()
                             .unwrap();
                         rt.block_on(async {
-                            if let Ok(mut cfg) = config::Config::load() {
-                                if let Ok(key) =
-                                    cfg.resolve_api_key(&config::Config::config_path(), None)
-                                {
-                                    let state = fetch_and_map(&key).await;
-                                    let _ = p.send_event(UserEvent::UpdateState(state));
+                            let state = match config::Config::load() {
+                                Err(e) => {
+                                    log::error!("refresh: failed to load config: {}", e);
+                                    TrayState::NetworkError
                                 }
-                            }
+                                Ok(mut cfg) => {
+                                    match cfg.resolve_api_key(&config::Config::config_path(), None) {
+                                        Err(e) => {
+                                            log::error!("refresh: failed to resolve key: {}", e);
+                                            TrayState::NoKey
+                                        }
+                                        Ok(key) => {
+                                            log::info!("refresh: key loaded, fetching balance...");
+                                            fetch_and_map(&key).await
+                                        }
+                                    }
+                                }
+                            };
+                            let _ = p.send_event(UserEvent::UpdateState(state));
                         });
                     });
                 }
