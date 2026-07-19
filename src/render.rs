@@ -1,5 +1,5 @@
 use anyhow::Result;
-use windows::Win32::Foundation::{COLORREF, RECT};
+use windows::Win32::Foundation::{COLORREF, RECT, SIZE};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -35,7 +35,6 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     }
     let hbmp_old = SelectObject(hdc_mem, hbmp);
 
-    // Black background → transparent
     let hbr = CreateSolidBrush(COLORREF(0));
     let full = RECT { left: 0, top: 0, right: icon_w as i32, bottom: icon_h as i32 };
     FillRect(hdc_mem, &full, hbr);
@@ -50,14 +49,25 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut text_buf = wide.clone();
-    let mut draw_rect = RECT { left: 0, top: 0, right: icon_w as i32, bottom: icon_h as i32 };
-    DrawTextW(hdc_mem, &mut text_buf, &mut draw_rect as *mut RECT, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    // measure actual pixel width & height
+    let mut sz = SIZE::default();
+    GetTextExtentPoint32W(hdc_mem, &wide, &mut sz);
+
+    // get ascent for baseline-based vertical centering
+    let mut tm = TEXTMETRICA::default();
+    GetTextMetricsA(hdc_mem, &mut tm);
+
+    // X = (canvas_width - text_width) / 2
+    let x = ((icon_w as i32 - sz.cx) / 2).max(0);
+    // Y = (canvas_height - text_height) / 2 + ascent
+    let y = ((icon_h as i32 - sz.cy) / 2).max(0) + tm.tmAscent;
+
+    TextOutW(hdc_mem, x, y, &wide);
 
     SelectObject(hdc_mem, hfont_old);
     let _ = DeleteObject(hfont);
 
-    // Read BGRA pixels from the bitmap
     let size = (icon_w * icon_h) as usize;
     let mut bits = vec![0u32; size];
     let mut bmi = BITMAPINFO::default();
@@ -78,7 +88,6 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     let _ = DeleteDC(hdc_mem);
     ReleaseDC(None, hdc_screen);
 
-    // Black → transparent; white text → white with brightness as alpha
     let mut rgba = Vec::with_capacity(size * 4);
     for p in &bits {
         let r = ((p >> 16) & 0xFF) as u32;
