@@ -49,15 +49,10 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     SetBkMode(hdc_mem, TRANSPARENT);
     SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
-    // Let GDI handle centering — SetTextAlign(TA_CENTER) accounts for
-    // per-character bearing/overhang that manual X calculation misses.
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut tm = TEXTMETRICA::default();
-    GetTextMetricsA(hdc_mem, &mut tm);
-    SetTextAlign(hdc_mem, TA_CENTER | TA_BASELINE);
-    let cx = (icon_w / 2) as i32;
-    let cy = ((icon_h as i32 + tm.tmHeight) / 2).max(0);
-    TextOutW(hdc_mem, cx, cy, &wide);
+    let mut text_buf = wide.clone();
+    let mut draw_rect = RECT { left: 0, top: 0, right: icon_w as i32, bottom: icon_h as i32 };
+    DrawTextW(hdc_mem, &mut text_buf, &mut draw_rect as *mut RECT, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
     SelectObject(hdc_mem, hfont_old);
     let _ = DeleteObject(hfont);
