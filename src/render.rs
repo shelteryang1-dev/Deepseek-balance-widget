@@ -49,15 +49,17 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     SetBkMode(hdc_mem, TRANSPARENT);
     SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
-    // Measure actual pixel dimensions of the text
+    // Measure text width and font ascent for precise centering.
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     let mut sz = SIZE::default();
     GetTextExtentPoint32W(hdc_mem, &wide, &mut sz);
+    let mut tm = TEXTMETRICA::default();
+    GetTextMetricsA(hdc_mem, &mut tm);
 
-    // Center: X = (canvas_width - text_width) / 2  (Y already calculated in earlier code)
+    // X: horizontal center
     let x = ((icon_w as i32 - sz.cx) / 2).max(0);
-    // Align text height within the bitmap
-    let y = ((icon_h as i32 - sz.cy) / 2).max(0);
+    // Y: TextOutW uses baseline, so offset by ascent to center vertically.
+    let y = ((icon_h as i32 - sz.cy) / 2).max(0) + tm.tmAscent;
     TextOutW(hdc_mem, x, y, &wide);
 
     SelectObject(hdc_mem, hfont_old);
