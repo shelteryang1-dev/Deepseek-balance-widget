@@ -1,5 +1,5 @@
 use anyhow::Result;
-use windows::Win32::Foundation::{COLORREF, RECT, SIZE};
+use windows::Win32::Foundation::{COLORREF, RECT};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -49,18 +49,15 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     SetBkMode(hdc_mem, TRANSPARENT);
     SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
-    // Measure text width and font ascent for precise centering.
+    // Let GDI handle centering — SetTextAlign(TA_CENTER) accounts for
+    // per-character bearing/overhang that manual X calculation misses.
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut sz = SIZE::default();
-    GetTextExtentPoint32W(hdc_mem, &wide, &mut sz);
     let mut tm = TEXTMETRICA::default();
     GetTextMetricsA(hdc_mem, &mut tm);
-
-    // X: horizontal center
-    let x = ((icon_w as i32 - sz.cx) / 2).max(0);
-    // Y: TextOutW uses baseline, so offset by ascent to center vertically.
-    let y = ((icon_h as i32 - sz.cy) / 2).max(0) + tm.tmAscent;
-    TextOutW(hdc_mem, x, y, &wide);
+    SetTextAlign(hdc_mem, TA_CENTER | TA_BASELINE);
+    let cx = (icon_w / 2) as i32;
+    let cy = ((icon_h as i32 + tm.tmHeight) / 2).max(0);
+    TextOutW(hdc_mem, cx, cy, &wide);
 
     SelectObject(hdc_mem, hfont_old);
     let _ = DeleteObject(hfont);
