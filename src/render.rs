@@ -48,21 +48,18 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     SetBkMode(hdc_mem, TRANSPARENT);
     SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
-    // Encode to UTF-16 without null terminator — TextOutW uses counted string.
+    // Measure actual pixel width for horizontal centering.
     let wide: Vec<u16> = text.encode_utf16().collect();
-
     let mut sz = SIZE::default();
     GetTextExtentPoint32W(hdc_mem, &wide, &mut sz);
-
-    let mut tm = TEXTMETRICA::default();
-    GetTextMetricsA(hdc_mem, &mut tm);
-
-    // X = (canvas_width - text_width) / 2
     let x = ((icon_w as i32 - sz.cx) / 2).max(0);
-    // Y = (canvas_height - text_height) / 2 + ascent
-    let y = ((icon_h as i32 - sz.cy) / 2).max(0) + tm.tmAscent;
 
-    TextOutW(hdc_mem, x, y, &wide);
+    // Use DrawTextW (not TextOutW) to avoid encoding artifacts.
+    // Position a narrow rect at computed X for horizontal placement,
+    // let DT_VCENTER handle vertical centering.
+    let mut text_buf = wide.clone();
+    let mut draw_rect = RECT { left: x, top: 0, right: x + sz.cx, bottom: icon_h as i32 };
+    DrawTextW(hdc_mem, &mut text_buf, &mut draw_rect as *mut RECT, DT_VCENTER | DT_SINGLELINE | DT_NOCLIP);
 
     SelectObject(hdc_mem, hfont_old);
     let _ = DeleteObject(hfont);
