@@ -48,13 +48,12 @@ unsafe fn gdi_text_icon(text: &str) -> Result<RenderedIcon> {
     SetBkMode(hdc_mem, TRANSPARENT);
     SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
 
-    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    // Encode to UTF-16 without null terminator — TextOutW uses counted string.
+    let wide: Vec<u16> = text.encode_utf16().collect();
 
-    // measure actual pixel width & height
     let mut sz = SIZE::default();
     GetTextExtentPoint32W(hdc_mem, &wide, &mut sz);
 
-    // get ascent for baseline-based vertical centering
     let mut tm = TEXTMETRICA::default();
     GetTextMetricsA(hdc_mem, &mut tm);
 
